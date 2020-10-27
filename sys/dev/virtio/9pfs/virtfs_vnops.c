@@ -209,7 +209,11 @@ virtfs_lookup(struct vop_lookup_args *ap)
 
 	} else if (error == ENOENT) {
 
+#if __FreeBSD_version >= 1300063
 		if (dvp->v_iflag & VIRF_DOOMED)
+#else
+		if (dvp->v_iflag & VI_DOOMED)
+#endif
 			return (ENOENT);
 		if (VOP_GETATTR(dvp, &vattr, cnp->cn_cred) == 0)
 			return (ENOENT);
@@ -252,18 +256,30 @@ virtfs_lookup(struct vop_lookup_args *ap)
 
 		if (error != 0) {
 			vfs_ref(mp);
-			VOP_UNLOCK( dvp);
+#if __FreeBSD_version >= 1300074
+			VOP_UNLOCK(dvp);
+#else
+			VOP_UNLOCK(dvp, 0);
+#endif
 			error = vfs_busy(mp, 0);
 			VOP_LOCK(dvp, ltype | LK_RETRY);
 			vfs_rel(mp);
+#if __FreeBSD_version >= 1300063
 			if (error == 0 && (dvp->v_iflag & VIRF_DOOMED)) {
+#else
+			if (error == 0 && (dvp->v_iflag & VI_DOOMED)) {
+#endif
 				vfs_unbusy(mp);
 				error = ENOENT;
 			}
 			if (error != 0)
 				return (error);
 		}
-		VOP_UNLOCK( dvp);
+#if __FreeBSD_version >= 1300074
+		VOP_UNLOCK(dvp);
+#else
+		VOP_UNLOCK(dvp, 0);
+#endif
 
 		/* Try to create/reuse the node */
 		error =  virtfs_vget_common(mp, NULL, cnp->cn_lkflags, newfid, &vp);
@@ -276,7 +292,11 @@ virtfs_lookup(struct vop_lookup_args *ap)
 		if (vp != dvp)
 			VOP_LOCK(dvp, ltype | LK_RETRY);
 
+#if __FreeBSD_version >= 1300063
 		if (dvp->v_iflag & VIRF_DOOMED) {
+#else
+		if (dvp->v_iflag & VI_DOOMED) {
+#endif
 			if (error == 0) {
 				if (vp == dvp)
 					vrele(vp);
@@ -666,7 +686,11 @@ virtfs_access(struct vop_access_args *ap)
 
 	/* Call the Generic Access check in VOPS*/
 	error = vaccess(vp->v_type, vap.va_mode, vap.va_uid, vap.va_gid, accmode,
+#if __FreeBSD_version >= 1300105
 	    cred);
+#else
+	    cred, NULL);
+#endif
 
 	return (error);
 }
@@ -916,7 +940,11 @@ virtfs_chown(struct vnode *vp, uid_t uid, gid_t gid, struct ucred *cred,
 	 */
 	if (((uid != inode->n_uid && uid != cred->cr_uid) ||
 	    (gid != inode->n_gid && !groupmember(gid, cred))) &&
+#if __FreeBSD_version >= 1300005
 	    (error = priv_check_cred(cred, PRIV_VFS_CHOWN)))
+#else
+	    (error = priv_check_cred(cred, PRIV_VFS_CHOWN, 0)))
+#endif
 		return (error);
 
 	ogid = inode->n_gid;
@@ -928,7 +956,11 @@ virtfs_chown(struct vnode *vp, uid_t uid, gid_t gid, struct ucred *cred,
 	if ((inode->i_mode & (ISUID | ISGID)) &&
 	    (ouid != uid || ogid != gid)) {
 
+#if __FreeBSD_version >= 1300005
 		if (priv_check_cred(cred, PRIV_VFS_RETAINSUGID))
+#else
+		if (priv_check_cred(cred, PRIV_VFS_RETAINSUGID, 0))
+#endif
 			inode->i_mode &= ~(ISUID | ISGID);
 	}
 	p9_debug(VOPS, "%s: vp %p, cred %p, td %p - ret OK\n", __func__, vp, cred, td);
@@ -963,11 +995,19 @@ virtfs_chmod(struct vnode *vp, uint32_t  mode, struct ucred *cred, struct thread
 	 * jail(8).
 	 */
 	if (vp->v_type != VDIR && (mode & S_ISTXT)) {
+#if __FreeBSD_version >= 1300005
 		if (priv_check_cred(cred, PRIV_VFS_STICKYFILE))
+#else
+		if (priv_check_cred(cred, PRIV_VFS_STICKYFILE, 0))
+#endif
 			return (EFTYPE);
 	}
 	if (!groupmember(inode->n_gid, cred) && (mode & ISGID)) {
+#if __FreeBSD_version >= 1300005
 		error = priv_check_cred(cred, PRIV_VFS_SETGID);
+#else
+		error = priv_check_cred(cred, PRIV_VFS_SETGID, 0);
+#endif
 		if (error)
 			return (error);
 	}
@@ -976,7 +1016,11 @@ virtfs_chmod(struct vnode *vp, uint32_t  mode, struct ucred *cred, struct thread
 	 * Deny setting setuid if we are not the file owner.
 	 */
 	if ((mode & ISUID) && inode->n_uid != cred->cr_uid) {
+#if __FreeBSD_version >= 1300005
 		error = priv_check_cred(cred, PRIV_VFS_ADMIN);
+#else
+		error = priv_check_cred(cred, PRIV_VFS_ADMIN, 0);
+#endif
 		if (error)
 			return (error);
 	}
@@ -1044,7 +1088,11 @@ virtfs_setattr(struct vop_setattr_args *ap)
 		 */
 
 		flags = inode->i_flags;
+#if __FreeBSD_version >= 1300005
 		if (!priv_check_cred(cred, PRIV_VFS_SYSFLAGS)) {
+#else
+		if (!priv_check_cred(cred, PRIV_VFS_SYSFLAGS, 0)) {
+#endif
 			if (flags & (SF_NOUNLINK | SF_IMMUTABLE | SF_APPEND)) {
 				error = securelevel_gt(cred, 0);
 			if (error)
