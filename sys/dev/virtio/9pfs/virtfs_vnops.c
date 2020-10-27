@@ -1503,6 +1503,7 @@ virtfs_readdir(struct vop_readdir_args *ap)
 		count = p9_client_readdir(np->vofid, (char *)io_buffer,
 			diroffset, count);
 
+		p9_debug(DIR, "virtfs_readdir: count: %d\n", count);
 		if (count == 0)
 			break;
 
@@ -1522,25 +1523,33 @@ virtfs_readdir(struct vop_readdir_args *ap)
 			bzero(&dent, sizeof(dent));
 			offset = p9_dirent_read(clnt, io_buffer, offset, count,
 				&dent);
+		        p9_debug(DIR, "virtfs_readdir: offset: %d\n", offset);
 			if (offset < 0 || offset > count) {
 				error = EIO;
 				goto out;
 			}
 
+		        p9_debug(DIR, "virtfs_readdir: offset is OK\n");
 			/*
 			 * If there isn't enough space in the uio to return a
 			 * whole dirent, break off read
 			 */
-			if (uio->uio_resid < GENERIC_DIRSIZ(&cde))
-				break;
+			if (uio->uio_resid < GENERIC_DIRSIZ(&cde)) {
+		        	p9_debug(DIR, "virtfs_readdir: not enough space: %d:%d\n", uio->uio_resid, GENERIC_DIRSIZ(&cde));
+/*				break; */
+			}
 
+		        p9_debug(DIR, "virtfs_readdir: bzero\n");
 			bzero(&cde, sizeof(cde));
+		        p9_debug(DIR, "virtfs_readdir: strncpy: dent.d_name: %s dent.d_len: %d\n", dent.d_name, dent.len);
 			strncpy(cde.d_name, dent.d_name, dent.len);
+		        p9_debug(DIR, "virtfs_readdir: cde.d_fileno\n");
 			cde.d_fileno = virtfs_qid2ino(&dent.qid) + offset;
 			cde.d_type = dent.d_type;
 			cde.d_namlen = dent.len;
 			cde.d_reclen = GENERIC_DIRSIZ(&cde);
 
+		        p9_debug(DIR, "virtfs_readdir: transfering\n");
 			/* Transfer */
 			error = uiomove(&cde, GENERIC_DIRSIZ(&cde), uio);
 			if (error != 0) {
@@ -1548,6 +1557,7 @@ virtfs_readdir(struct vop_readdir_args *ap)
 				goto out;
 			}
 			diroffset = dent.d_off;
+		        p9_debug(DIR, "virtfs_readdir: diroffset: %d\n", diroffset);
 		}
 	}
 	/* Pass on last transferred offset */

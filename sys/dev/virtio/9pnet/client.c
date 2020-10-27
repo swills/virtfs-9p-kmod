@@ -86,14 +86,14 @@ p9_parse_opts(struct mount  *mp, struct p9_client *clnt)
 	int error = 0;
 
 	/* These are defaults for now */
-	clnt->proto_version = p9_proto_2000u;
+	clnt->proto_version = p9_proto_2000L;
 	clnt->msize = 8192;
 
 	trans = vfs_getopts(mp->mnt_optnew, "trans", &error);
 	if (error != 0)
 		return (error);
 
-	p9_debug(TRANS, " Attaching to the %s transport \n", trans);
+	p9_debug(TRANS, "Attaching to the %s transport\n", trans);
 	/* Get the default trans callback */
 	clnt->trans_mod = p9_get_default_trans();
 
@@ -182,8 +182,8 @@ out:
 static int
 p9_client_check_return(struct p9_client *c, struct p9_req_t *req)
 {
-	int err;
-	int ecode;
+	int err = 0;
+	int ecode = 0;
 	char *ename;
 
 	/* Check what we have in the receive bufer .*/
@@ -215,8 +215,9 @@ p9_client_check_return(struct p9_client *c, struct p9_req_t *req)
 	 * Note this is still not completely an error as, lookups for files not present
 	 * can hit this and return. Hence its made a debug print.
 	 */
-	if (err != 0)
+	if (err != 0) {
 		p9_debug(TRANS, "<<< RERROR (%d) %s\n", err, ename);
+	}
 
 	free(ename, M_TEMP);
 
@@ -1161,7 +1162,7 @@ p9_client_statfs(struct p9_fid *fid, struct p9_statfs *stat)
 		goto error;
 	}
 
-	p9_debug(TRANS, " STATFS fid %d type 0x%lx bsize %ld "
+	p9_debug(TRANS, "STATFS fid %d type 0x%lx bsize %ld "
 	    "blocks %lu bfree %lu bavail %lu files %lu ffree %lu "
 	    "fsid %lu namelen %ld\n", fid->fid, (long unsigned int)stat->type,
 	    (long int)stat->bsize, stat->blocks, stat->bfree, stat->bavail,

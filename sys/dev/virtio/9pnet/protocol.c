@@ -119,8 +119,11 @@ p9_buf_vreadf(struct p9_buffer *buf, int proto_version, const char *fmt,
 		{
 			int32_t *val = va_arg(ap, int32_t *);
 
-			if (buf_read(buf, val, sizeof(*val)))
+		        p9_debug(ERROR, "p9_buf_vreadf: d: called\n");
+			if (buf_read(buf, val, sizeof(*val))) {
+		                p9_debug(ERROR, "p9_buf_vreadf: d: buf_read failed: %d\n", err);
 				err = EFAULT;
+			}
 			break;
 		}
 		case 'q':
@@ -138,8 +141,11 @@ p9_buf_vreadf(struct p9_buffer *buf, int proto_version, const char *fmt,
 			char *sptr;
 
 			err = buf_read(buf, &len, sizeof(uint16_t));
-			if (err)
+			if (err) {
+		                p9_debug(ERROR, "p9_buf_vreadf: s: buf_read failed: %d\n", err);
 				break;
+			}
+		        p9_debug(ERROR, "p9_buf_vreadf: s: len: %d\n", len);
 
 			sptr = malloc(len + 1, M_TEMP, M_NOWAIT | M_ZERO);
 
@@ -242,6 +248,7 @@ p9_buf_vreadf(struct p9_buffer *buf, int proto_version, const char *fmt,
 		}
 		case '?':
 		{
+		        p9_debug(ERROR, "p9_buf_vreadf: ?: proto_version: %d\n", proto_version);
 			if ((proto_version != p9_proto_2000u) && (proto_version != p9_proto_2000L))
 				return 0;
 			break;

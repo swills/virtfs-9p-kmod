@@ -46,6 +46,7 @@
 #include "virtio_fs_9p.h"
 
 enum p9_proto_versions {
+	p9_invalid_version,
 	p9_proto_legacy,
 	p9_proto_2000u,
 	p9_proto_2000L,
