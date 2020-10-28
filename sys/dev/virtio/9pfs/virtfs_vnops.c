@@ -1464,7 +1464,14 @@ virtfs_qid2ino(struct p9_qid *qid)
  *
  */
 static int
-virtfs_readdir(struct vop_readdir_args *ap)
+virtfs_readdir(struct vop_readdir_args /* {
+                struct vnode *a_vp;
+                struct uio *a_uio;
+                struct ucred *a_cred;
+                int *a_eofflag;
+                int *a_ncookies;
+                u_long **a_cookies;
+        } */ *ap)
 {
 	struct uio *uio = ap->a_uio;
 	struct vnode *vp = ap->a_vp;
@@ -1484,12 +1491,25 @@ virtfs_readdir(struct vop_readdir_args *ap)
 	if (vp->v_type != VDIR)
 		return (ENOTDIR);
 
+        if (ap->a_eofflag)
+                *ap->a_eofflag = 0;
+
 	p9_debug(VOPS, "virtfs_readdir resid %zd\n",uio->uio_resid);
 
 	io_buffer = uma_zalloc(virtfs_io_buffer_zone, M_WAITOK);
 
 	/* We havnt reached the end yet. read more. */
 	diroffset = uio->uio_offset;
+
+	if (uio->uio_resid < sizeof(struct dirent) ||
+	    (offset & (sizeof(struct dirent) - 1))) {
+		p9_debug(VOPS, "virtfs_readdir: buffer too small\n");
+                return (EINVAL);
+	}
+
+
+	/* while (uio->uio_resid >= sizeof(struct dirent)) { */
+	/* while (uio->uio_resid > 0) { */
 	while (uio->uio_resid >= sizeof(struct dirent)) {
 		/*
 		 * We need to read more data as what is indicated by filesize because
@@ -1500,10 +1520,11 @@ virtfs_readdir(struct vop_readdir_args *ap)
 		 */
 		count = VIRTFS_IOUNIT;
 		bzero(io_buffer, VIRTFS_MTU);
+		p9_debug(DIR, "virtfs_readdir: p9_client_readdir: diroffset: %d count: %d\n", diroffset, count);
 		count = p9_client_readdir(np->vofid, (char *)io_buffer,
 			diroffset, count);
 
-		p9_debug(DIR, "virtfs_readdir: count: %d\n", count);
+		p9_debug(DIR, "virtfs_readdir: p9_client_readdir: count: %d\n", count);
 		if (count == 0)
 			break;
 
@@ -1521,24 +1542,16 @@ virtfs_readdir(struct vop_readdir_args *ap)
 			 * appends it to dirent(FREEBSD specifc) and continues to parse the buffer.
 			 */
 			bzero(&dent, sizeof(dent));
+		        p9_debug(DIR, "virtfs_readdir: p9_dirent_read: offset: %d count: %d\n", offset, count);
 			offset = p9_dirent_read(clnt, io_buffer, offset, count,
 				&dent);
-		        p9_debug(DIR, "virtfs_readdir: offset: %d\n", offset);
+		        p9_debug(DIR, "virtfs_readdir: p9_dirent_read: offset: %d\n", offset);
 			if (offset < 0 || offset > count) {
 				error = EIO;
 				goto out;
 			}
 
 		        p9_debug(DIR, "virtfs_readdir: offset is OK\n");
-			/*
-			 * If there isn't enough space in the uio to return a
-			 * whole dirent, break off read
-			 */
-			if (uio->uio_resid < GENERIC_DIRSIZ(&cde)) {
-		        	p9_debug(DIR, "virtfs_readdir: not enough space: %d:%d\n", uio->uio_resid, GENERIC_DIRSIZ(&cde));
-/*				break; */
-			}
-
 		        p9_debug(DIR, "virtfs_readdir: bzero\n");
 			bzero(&cde, sizeof(cde));
 		        p9_debug(DIR, "virtfs_readdir: strncpy: dent.d_name: %s dent.d_len: %d\n", dent.d_name, dent.len);
@@ -1549,7 +1562,17 @@ virtfs_readdir(struct vop_readdir_args *ap)
 			cde.d_namlen = dent.len;
 			cde.d_reclen = GENERIC_DIRSIZ(&cde);
 
-		        p9_debug(DIR, "virtfs_readdir: transfering\n");
+			/*
+			 * If there isn't enough space in the uio to return a
+			 * whole dirent, break off read
+			 */
+			if (uio->uio_resid < GENERIC_DIRSIZ(&cde)) {
+		        	p9_debug(DIR, "virtfs_readdir: not enough space: %d:%d\n", uio->uio_resid, GENERIC_DIRSIZ(&cde));
+				break;
+			}
+
+
+		        p9_debug(DIR, "virtfs_readdir: transfering: %d\n", uio->uio_segflg);
 			/* Transfer */
 			error = uiomove(&cde, GENERIC_DIRSIZ(&cde), uio);
 			if (error != 0) {
@@ -1559,9 +1582,16 @@ virtfs_readdir(struct vop_readdir_args *ap)
 			diroffset = dent.d_off;
 		        p9_debug(DIR, "virtfs_readdir: diroffset: %d\n", diroffset);
 		}
+		p9_debug(DIR, "virtfs_readdir: buffer processed\n");
+		p9_debug(VOPS, "virtfs_readdir resid %zd\n",uio->uio_resid);
 	}
+
 	/* Pass on last transferred offset */
 	uio->uio_offset = diroffset;
+	if (uio->uio_resid == 0) {
+		p9_debug(VOPS, "virtfs_readdir: setting eofflag\n");
+		*ap->a_eofflag = 1;
+	}
 
 out:
 	uma_zfree(virtfs_io_buffer_zone, io_buffer);
@@ -1714,21 +1744,28 @@ out1:
 
 struct vop_vector virtfs_vnops = {
 	.vop_default =		&default_vnodeops,
+
+	/* fails */
 	.vop_lookup =		virtfs_lookup,
+
+	/* works */
 	.vop_open =		virtfs_open,
 	.vop_close =		virtfs_close,
 	.vop_access =		virtfs_access,
 	.vop_getattr =		virtfs_getattr,
-	.vop_setattr =		virtfs_setattr,
-	.vop_reclaim =		virtfs_reclaim,
 	.vop_readdir =		virtfs_readdir,
-	.vop_create =		virtfs_create,
-	.vop_mknod =		virtfs_mknod,
 	.vop_read =		virtfs_read,
-	.vop_write =		virtfs_write,
-	.vop_remove =		virtfs_remove,
+
+	/* fails */
+	.vop_create =		virtfs_create,
+	.vop_setattr =		virtfs_setattr,
 	.vop_mkdir =		virtfs_mkdir,
 	.vop_rmdir =		virtfs_rmdir,
-	.vop_strategy =		virtfs_strategy,
 	.vop_symlink =		virtfs_symlink,
+	.vop_mknod =		virtfs_mknod,
+	.vop_reclaim =		virtfs_reclaim,
+	.vop_write =		virtfs_write,
+	.vop_remove =		virtfs_remove,
+	.vop_strategy =		virtfs_strategy,
 };
+/* VFS_VOP_VECTOR_REGISTER(virtfs_vnops); */
