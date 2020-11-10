@@ -97,14 +97,33 @@ p9_buf_vreadf(struct p9_buffer *buf, int proto_version, const char *fmt,
 	const char *ptr;
 	int err = 0;
 
+        p9_debug(ERROR, "%s: called: %s\n", __func__, fmt);
+        p9_debug(ERROR, "%s: buf->size: %u\n", __func__, buf->size);
+        p9_debug(ERROR, "%s: buf->tag: %hu\n", __func__, buf->tag);
+        p9_debug(ERROR, "%s: buf->id: %hu\n", __func__, buf->id);
+
+	/*
+        for (int i = 0; i < sizeof(uint32_t); i++) {
+        	p9_debug(ERROR, "%02X", buf->size[i]);
+        }
+        p9_debug(ERROR, "\n");
+        p9_debug(ERROR, "%s: tag: ", __func__);
+        for (int i = 0; i < sizeof(uint16_t); i++) {
+        	p9_debug(ERROR, "%02X", buf->tag[i]);
+        }
+        p9_debug(ERROR, "\n");
+	*/
+
 	for (ptr = fmt; *ptr; ptr++) {
 		switch (*ptr) {
 		case 'b':
 		{
 			int8_t *val = va_arg(ap, int8_t *);
 
-			if (buf_read(buf, val, sizeof(*val)))
+			if (buf_read(buf, val, sizeof(*val))) {
+		        	p9_debug(ERROR, "%s: b: buf_read failed\n", __func__);
 				err = EFAULT;
+			}
 			break;
 		}
 		case 'w':
@@ -119,9 +138,8 @@ p9_buf_vreadf(struct p9_buffer *buf, int proto_version, const char *fmt,
 		{
 			int32_t *val = va_arg(ap, int32_t *);
 
-		        p9_debug(ERROR, "p9_buf_vreadf: d: called\n");
 			if (buf_read(buf, val, sizeof(*val))) {
-		                p9_debug(ERROR, "p9_buf_vreadf: d: buf_read failed: %d\n", err);
+		                p9_debug(ERROR, "%s: d: buf_read failed: %d\n", __func__, err);
 				err = EFAULT;
 			}
 			break;
@@ -130,8 +148,10 @@ p9_buf_vreadf(struct p9_buffer *buf, int proto_version, const char *fmt,
 		{
 			int64_t *val = va_arg(ap, int64_t *);
 
-			if (buf_read(buf, val, sizeof(*val)))
+			if (buf_read(buf, val, sizeof(*val))) {
+		        	p9_debug(ERROR, "%s: q: failed\n", __func__);
 				err = EFAULT;
+			}
 			break;
 		}
 		case 's':
@@ -230,14 +250,18 @@ p9_buf_vreadf(struct p9_buffer *buf, int proto_version, const char *fmt,
 
 			wqids = NULL;
 			err = buf_read(buf, nwqid_p, sizeof(uint16_t));
-			if (err != 0)
+			if (err != 0) {
+		        	p9_debug(ERROR, "%s: p9_buf_vreadf: R: buf_read1 failed\n", __func__);
 				break;
+			}
 
 			nwqid = *nwqid_p;
+		        p9_debug(ERROR, "%s: p9_buf_vreadf: R: nqid: %d\n", __func__, nwqid);
 			wqids = malloc(nwqid * sizeof(struct p9_qid), M_TEMP, M_NOWAIT | M_ZERO);
 
-			for (i = 0; i < nwqid && (err == 0); i++)
+			for (i = 0; i < nwqid && (err == 0); i++) {
 				err = p9_buf_readf(buf, proto_version, "Q", &(wqids)[i]);
+			}
 
 			if (err != 0) {
 				free(wqids, M_TEMP);

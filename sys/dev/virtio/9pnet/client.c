@@ -197,14 +197,20 @@ p9_client_check_return(struct p9_client *c, struct p9_req_t *req)
 	 * No error, We are done with the preprocessing. Return to the caller
 	 * and process the actual data.
 	 */
-	if (req->rc->id != P9PROTO_RERROR)
+	if (req->rc->id != P9PROTO_RERROR && req->rc->id != P9PROTO_RLERROR)
 		return (0);
 
 	/*
 	 * Interpreting the error is done in different ways for Linux and Unix version
 	 * Make sure you interpret it right.
 	 */
-	err = p9_buf_readf(req->rc, c->proto_version, "s?d", &ename, &ecode);
+	if (req->rc->id == P9PROTO_RERROR) {
+	        err = p9_buf_readf(req->rc, c->proto_version, "s?d", &ename, &ecode);
+	} else if (req->rc->id == P9PROTO_RLERROR) {
+	        err = p9_buf_readf(req->rc, c->proto_version, "d", &ecode);
+	} else {
+		goto err_out;
+	}
 
 	if (err != 0)
 		goto err_out;
@@ -216,10 +222,16 @@ p9_client_check_return(struct p9_client *c, struct p9_req_t *req)
 	 * can hit this and return. Hence its made a debug print.
 	 */
 	if (err != 0) {
-		p9_debug(TRANS, "<<< RERROR (%d) %s\n", err, ename);
+	        if (req->rc->id == P9PROTO_RERROR) {
+		        p9_debug(TRANS, "<<< RERROR (%d) %s\n", err, ename);
+	        } else if (req->rc->id == P9PROTO_RLERROR) {
+		        p9_debug(TRANS, "<<< RLERROR (%d)\n", err);
+		}
 	}
 
-	free(ename, M_TEMP);
+	if (req->rc->id == P9PROTO_RERROR) {
+	        free(ename, M_TEMP);
+	}
 
 	return (err);
 err_out:
@@ -698,7 +710,7 @@ struct p9_fid *
 p9_client_walk(struct p9_fid *oldfid, char  *wname,
     size_t wnamelen, int clone, int *error)
 {
-	int err;
+	int err = 0;
 	struct p9_client *clnt;
 	struct p9_fid *fid;
 	struct p9_qid *wqids;
@@ -742,10 +754,14 @@ p9_client_walk(struct p9_fid *oldfid, char  *wname,
 	 */
 	req = p9_client_request(clnt, P9PROTO_TWALK, &err, "ddT", oldfid->fid, fid->fid,
 	    wname, wnamelen);
-	if (req == NULL)
+	if (req == NULL) {
+	        p9_debug(TRANS, "%s: TWALK failed\n", __func__);
 		goto error;
+	}
+	p9_debug(TRANS, "%s: TWALK succes\n", __func__);
 
 	err = p9_buf_readf(req->rc, clnt->proto_version, "R", &nwqids, &wqids);
+	p9_debug(TRANS, "%s: p9_buf_readf: %d:\n", __func__, err);
 	if (err != 0) {
 		p9_free_req(req);
 		goto clunk_fid;

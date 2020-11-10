@@ -163,7 +163,7 @@ virtfs_lookup(struct vop_lookup_args *ap)
 	islastcn = flags & ISLASTCN;
 	*vpp = NULLVP;
 
-	p9_debug(VOPS, "lookup\n");
+	p9_debug(VOPS, "%s: lookup\n", __func__);
 
 	/* Do the cache part ourselves */
 	if ((flags & ISLASTCN) && (mp->mnt_flag & MNT_RDONLY) &&
@@ -175,15 +175,16 @@ virtfs_lookup(struct vop_lookup_args *ap)
 
 	/* rename is not supported on this version */
 	if (nameiop == RENAME) {
-		p9_debug(VOPS, "Rename is not supported \n");
+		p9_debug(VOPS, "%s: Rename is not supported\n", __func__);
 		return (ENOTSUP);
 	}
 
 	/* Look for the entry in the component cache*/
 	error = cache_lookup(dvp, vpp, cnp, NULL, NULL);
 
+	p9_debug(VOPS, "%s: cache result: %d\n", __func__, error);
 	if (error > 0 && error != ENOENT) {
-		p9_debug(VOPS, "Cache lookup error %d \n",error);
+		p9_debug(VOPS, "%s: Cache lookup error %d \n", __func__, error);
 		return (error);
 	}
 
@@ -208,6 +209,7 @@ virtfs_lookup(struct vop_lookup_args *ap)
 		*vpp = NULLVP;
 
 	} else if (error == ENOENT) {
+		p9_debug(VOPS, "%s: INOENT\n", __func__);
 
 #if __FreeBSD_version >= 1300063
 		if (dvp->v_iflag & VIRF_DOOMED)
@@ -285,7 +287,7 @@ virtfs_lookup(struct vop_lookup_args *ap)
 		error =  virtfs_vget_common(mp, NULL, cnp->cn_lkflags, newfid, &vp);
 
 		if (error == 0) {
-			p9_debug(VOPS, "Node created OK\n");
+			p9_debug(VOPS, "%s: Node created OK\n", __func__);
 			*vpp = vp;
 		}
 		vfs_unbusy(mp);
@@ -355,7 +357,7 @@ create_common(struct virtfs_node *dir_node,
 	struct mount *mp = ses->virtfs_mount;
 	int err;
 
-	p9_debug(VOPS, "name %pd\n", name);
+	p9_debug(VOPS, "%s: name %pd\n", __func__, name);
 	err = 0;
 	ofid = NULL;
 	newfid = NULL;
@@ -374,7 +376,7 @@ create_common(struct virtfs_node *dir_node,
 
 	err = p9_client_file_create(ofid, name, perm, mode, extension);
 	if (err != 0) {
-		p9_debug(ERROR, "p9_client_fcreate failed %d\n", err);
+		p9_debug(ERROR, "%s: p9_client_fcreate failed %d\n", __func__, err);
 		goto out;
 	}
 
@@ -397,7 +399,7 @@ create_common(struct virtfs_node *dir_node,
 		if ((cnp->cn_flags & MAKEENTRY) != 0)
 			cache_enter(VIRTFS_NTOV(dir_node), *vpp, cnp);
 	}
-	p9_debug(VOPS, "created file under vp %p node %p fid %d\n", *vpp, dir_node,
+	p9_debug(VOPS, "%s: created file under vp %p node %p fid %d\n", __func__, *vpp, dir_node,
 		(uintmax_t)dir_node->vfid->fid);
 	/* Clunk the open ofid. */
 	if (ofid != NULL) {
@@ -554,7 +556,7 @@ virtfs_open(struct vop_open_args *ap)
 	size_t filesize;
 	uint32_t mode;
 
-	p9_debug(VOPS, "virtfs_open \n");
+	p9_debug(VOPS, "%s: virtfs_open\n", __func__);
 
         error = virtfs_reload_stats(vp);
         if (error != 0)
@@ -616,7 +618,7 @@ virtfs_close(struct vop_close_args *ap)
 		return 0;
 	}
 
-	p9_debug(VOPS, "%s(fid %d opens %d)\n", __func__, np->vfid->fid, np->v_opens);
+	p9_debug(VOPS, "%s: (fid %d opens %d)\n", __func__, np->vfid->fid, np->v_opens);
 	np->v_opens--;
 	if (np->v_opens == 0) {
 		/* clean up the open fid */
@@ -673,7 +675,7 @@ virtfs_access(struct vop_access_args *ap)
 	struct vattr vap;
 	int error;
 
-	p9_debug(VOPS,"virtfs_access \n");
+	p9_debug(VOPS,"%s: virtfs_access\n", __func__);
 
 	/* make sure getattr is working correctly and is defined.*/
 	error = VOP_GETATTR(vp, &vap, NULL);
@@ -712,7 +714,7 @@ virtfs_reload_stats(struct vnode *vp)
 	error = p9_client_stat(node->vfid, &stat);
 
 	if (error != 0) {
-		p9_debug(ERROR, "p9_client_stat failed to reload stats\n");
+		p9_debug(ERROR, "%s: p9_client_stat failed to reload stats\n", __func__);
 		goto out;
 	}
 
@@ -743,12 +745,12 @@ virtfs_getattr(struct vop_getattr_args *ap)
 	int error;
 	int type;
 
-	p9_debug(VOPS, "getattr %u %u\n", inode->i_mode, IFTOVT(inode->i_mode));
+	p9_debug(VOPS, "%s: getattr %u %u\n", __func__, inode->i_mode, IFTOVT(inode->i_mode));
 
 	/* Reload our stats once to get the right values.*/
 	error = virtfs_reload_stats(vp);
 	if (error != 0) {
-		p9_debug(ERROR, "virtfs_reload_stats failed %d\n", error);
+		p9_debug(ERROR, "%s: virtfs_reload_stats failed %d\n", __func__, error);
 		return (error);
 	}
 
@@ -1167,7 +1169,7 @@ out:
 	if (wstat) {
 		uma_zfree(virtfs_stat_zone, wstat);
 	}
-	p9_debug(VOPS, "error code for p9_client_wstat %d \n",error);
+	p9_debug(VOPS, "%s: error code for p9_client_wstat %d \n", __func__, error);
 
 	return (error);
 }
@@ -1211,7 +1213,7 @@ virtfs_read(struct vop_read_args *ap)
 	if(uio->uio_offset >= filesize)
 		return (0);
 
-	p9_debug(VOPS, "virtfs_read called %lu at %lu\n",
+	p9_debug(VOPS, "%s: virtfs_read called %lu at %lu\n", __func__,
 	    uio->uio_resid, (uintmax_t)uio->uio_offset);
 
 	/* Work with a local buffer from the pool for this vop */
@@ -1278,7 +1280,7 @@ virtfs_write(struct vop_write_args *ap)
 	ioflag = ap->a_ioflag;
 	node = VIRTFS_VTON(vp);
 
-	p9_debug(VOPS, "virtfs_write called %#zx at %#jx\n",
+	p9_debug(VOPS, "%s: virtfs_write called %#zx at %#jx\n", __func__,
 	    uio->uio_resid, (uintmax_t)uio->uio_offset);
 
 	if (uio->uio_offset < 0)
@@ -1313,7 +1315,7 @@ virtfs_write(struct vop_write_args *ap)
 		error = uiomove(io_buffer, count, uio);
 
 		if (error != 0) {
-			p9_debug(ERROR, "uiomove error in virtfs_write\n");
+			p9_debug(ERROR, "%s: uiomove error\n", __func__);
 			goto out;
 		}
 
@@ -1324,7 +1326,7 @@ virtfs_write(struct vop_write_args *ap)
                                 io_buffer + off);
 			if (ret < 0)
 				goto out;
-			p9_debug(VOPS, "virtfs_write called %#zx at %#jx\n",
+			p9_debug(VOPS, "%s: called %#zx at %#jx\n", __func__,
 			    uio->uio_resid, (uintmax_t)uio->uio_offset);
 
                         off += ret;
@@ -1494,7 +1496,7 @@ virtfs_readdir(struct vop_readdir_args /* {
         if (ap->a_eofflag)
                 *ap->a_eofflag = 0;
 
-	p9_debug(VOPS, "virtfs_readdir resid %zd\n",uio->uio_resid);
+	p9_debug(VOPS, "%s: resid %zd\n", __func__, uio->uio_resid);
 
 	io_buffer = uma_zalloc(virtfs_io_buffer_zone, M_WAITOK);
 
@@ -1503,13 +1505,10 @@ virtfs_readdir(struct vop_readdir_args /* {
 
 	if (uio->uio_resid < sizeof(struct dirent) ||
 	    (offset & (sizeof(struct dirent) - 1))) {
-		p9_debug(VOPS, "virtfs_readdir: buffer too small\n");
                 return (EINVAL);
 	}
 
 
-	/* while (uio->uio_resid >= sizeof(struct dirent)) { */
-	/* while (uio->uio_resid > 0) { */
 	while (uio->uio_resid >= sizeof(struct dirent)) {
 		/*
 		 * We need to read more data as what is indicated by filesize because
@@ -1520,11 +1519,9 @@ virtfs_readdir(struct vop_readdir_args /* {
 		 */
 		count = VIRTFS_IOUNIT;
 		bzero(io_buffer, VIRTFS_MTU);
-		p9_debug(DIR, "virtfs_readdir: p9_client_readdir: diroffset: %d count: %d\n", diroffset, count);
 		count = p9_client_readdir(np->vofid, (char *)io_buffer,
 			diroffset, count);
 
-		p9_debug(DIR, "virtfs_readdir: p9_client_readdir: count: %d\n", count);
 		if (count == 0)
 			break;
 
@@ -1542,21 +1539,15 @@ virtfs_readdir(struct vop_readdir_args /* {
 			 * appends it to dirent(FREEBSD specifc) and continues to parse the buffer.
 			 */
 			bzero(&dent, sizeof(dent));
-		        p9_debug(DIR, "virtfs_readdir: p9_dirent_read: offset: %d count: %d\n", offset, count);
 			offset = p9_dirent_read(clnt, io_buffer, offset, count,
 				&dent);
-		        p9_debug(DIR, "virtfs_readdir: p9_dirent_read: offset: %d\n", offset);
 			if (offset < 0 || offset > count) {
 				error = EIO;
 				goto out;
 			}
 
-		        p9_debug(DIR, "virtfs_readdir: offset is OK\n");
-		        p9_debug(DIR, "virtfs_readdir: bzero\n");
 			bzero(&cde, sizeof(cde));
-		        p9_debug(DIR, "virtfs_readdir: strncpy: dent.d_name: %s dent.d_len: %d\n", dent.d_name, dent.len);
 			strncpy(cde.d_name, dent.d_name, dent.len);
-		        p9_debug(DIR, "virtfs_readdir: cde.d_fileno\n");
 			cde.d_fileno = virtfs_qid2ino(&dent.qid) + offset;
 			cde.d_type = dent.d_type;
 			cde.d_namlen = dent.len;
@@ -1567,12 +1558,9 @@ virtfs_readdir(struct vop_readdir_args /* {
 			 * whole dirent, break off read
 			 */
 			if (uio->uio_resid < GENERIC_DIRSIZ(&cde)) {
-		        	p9_debug(DIR, "virtfs_readdir: not enough space: %d:%d\n", uio->uio_resid, GENERIC_DIRSIZ(&cde));
 				break;
 			}
 
-
-		        p9_debug(DIR, "virtfs_readdir: transfering: %d\n", uio->uio_segflg);
 			/* Transfer */
 			error = uiomove(&cde, GENERIC_DIRSIZ(&cde), uio);
 			if (error != 0) {
@@ -1580,16 +1568,12 @@ virtfs_readdir(struct vop_readdir_args /* {
 				goto out;
 			}
 			diroffset = dent.d_off;
-		        p9_debug(DIR, "virtfs_readdir: diroffset: %d\n", diroffset);
 		}
-		p9_debug(DIR, "virtfs_readdir: buffer processed\n");
-		p9_debug(VOPS, "virtfs_readdir resid %zd\n",uio->uio_resid);
 	}
 
 	/* Pass on last transferred offset */
 	uio->uio_offset = diroffset;
 	if (uio->uio_resid == 0) {
-		p9_debug(VOPS, "virtfs_readdir: setting eofflag\n");
 		*ap->a_eofflag = 1;
 	}
 
@@ -1656,7 +1640,7 @@ virtfs_strategy(struct vop_strategy_args *ap)
 				if (count == 0)
 					break;
 
-				p9_debug(VOPS, "virtfs_strategy read called %#zx at %#jx\n",
+				p9_debug(VOPS, "%s: read called %#zx at %#jx\n", __func__,
 				    uiov->uio_resid, (uintmax_t)uiov->uio_offset);
 
 				/* Copy count bytes into the uio */
@@ -1707,7 +1691,7 @@ virtfs_strategy(struct vop_strategy_args *ap)
 					if (ret < 0)
 						goto out;
 
-					p9_debug(VOPS, "virtfs_strategy write called %#zx at %#jx\n",
+					p9_debug(VOPS, "%s: write called %#zx at %#jx\n", __func__, 
 				    	    uiov->uio_resid, (uintmax_t)uiov->uio_offset);
                                         off += ret;
 					offset += ret;
