@@ -24,6 +24,8 @@
  * SUCH DAMAGE.
  */
 
+/* 9P client definitions */
+
 #ifndef VIRTIO_FS_CLIENT_H
 #define VIRTIO_FS_CLIENT_H
 
@@ -45,24 +47,24 @@
 
 #include "virtio_fs_9p.h"
 
+/* 9P protocol versions */
 enum p9_proto_versions {
-	p9_invalid_version,
-	p9_proto_legacy,
-	p9_proto_2000u,
-	p9_proto_2000L,
+	p9_proto_legacy,	/* legacy version */
+	p9_proto_2000u,		/* Unix version */
+	p9_proto_2000L,		/* Linux version */
 };
 
 /* P9 Request exchanged between Host and Guest */
 struct p9_req_t {
-	struct p9_buffer *tc;
-	struct p9_buffer *rc;
+	struct p9_buffer *tc;	/* request buffer */
+	struct p9_buffer *rc;	/* response buffer */
 };
 
+/* 9P transport status */
 enum transport_status {
-
-	VIRTFS_CONNECT,
-	VIRTFS_BEGIN_DISCONNECT,
-	VIRTFS_DISCONNECT,
+	VIRTFS_CONNECT,		/* transport is connected */
+	VIRTFS_BEGIN_DISCONNECT,/* transport has begun to disconnect */
+	VIRTFS_DISCONNECT,	/* transport has been dosconnected */
 };
 
 /* This is set by QEMU so we will oblige */
@@ -77,48 +79,54 @@ enum transport_status {
 #define VIRTFS_DIRENT_LEN 256
 #define P9_NOTAG 0
 
+/* Client state information */
 struct p9_client {
-	struct mtx p9clnt_mtx;
-	struct mtx p9req_mtx;
-	struct cv req_cv;
-	unsigned int msize;
-	unsigned char proto_version;
-	struct p9_trans_module *trans_mod;
-	void *trans;
-	struct unrhdr *fidpool;
-	struct unrhdr *tagpool;
-	enum transport_status trans_status;
+	struct mtx p9clnt_mtx;			/* mutex to lock the client */
+	struct mtx p9req_mtx;			/* mutex to lock the request buffer */
+	struct cv req_cv;			/* condition variable on which to wake up thread */
+	unsigned int msize;			/* maximum data size */
+	unsigned char proto_version;		/* 9P version to use */
+	struct p9_trans_module *trans_mod;	/* module API instantiated with this client */
+	void *trans;				/* tranport instance state and API */
+	struct unrhdr *fidpool;			/* fid handle accounting for session */
+	struct unrhdr *tagpool;			/* transaction id accounting for session */
+	enum transport_status trans_status;	/* tranport instance state */
 };
 
 /* The main fid structure which keeps track of the file.*/
 struct p9_fid {
-	struct p9_client *clnt;
-	uint32_t fid;
-	int mode;
-	struct p9_qid qid;
-	uint32_t mtu;
-	uid_t uid;
+	struct p9_client *clnt;	/* the instatntiating 9P client */
+	uint32_t fid;		/* numeric identifier */
+	int mode;		/* current mode of this fid */
+	struct p9_qid qid;	/* server identifier */
+	uint32_t mtu;		/* max transferrable unit at a time */
+	uid_t uid;		/* numeric uid of the local user who owns this handle */
+	int v_opens;		/* keep count on the number of opens called with this fiel handle */
+	STAILQ_ENTRY(p9_fid) fid_next;	/* points to next fid in the list */
 };
 
+/* Directory entry structure */
 struct p9_dirent {
-	struct p9_qid qid;
-	uint64_t d_off;
-	unsigned char d_type;
-	char d_name[VIRTFS_DIRENT_LEN];
+	struct p9_qid qid;		/* 9P server qid for this dirent */
+	uint64_t d_off;			/* offset to the next dirent */
+	unsigned char d_type;		/* file type */
+	char d_name[VIRTFS_DIRENT_LEN];	/* file name */
 	int len;
 };
 
 /* Session and client Init Ops */
-struct p9_client *p9_client_create(struct mount *mp, int *error);
+struct p9_client *p9_client_create(struct mount *mp, int *error,
+    const char *mount_tag);
 void p9_client_destroy(struct p9_client *clnt);
-struct p9_fid *p9_client_attach(struct p9_client *clnt, int *error);
+struct p9_fid *p9_client_attach(struct p9_client *clnt, struct p9_fid *fid,
+    const char *uname, uid_t n_uname, const char *aname, int *error);
 
 /* FILE OPS - These are individually called from the specific vop function */
 
 int p9_client_open(struct p9_fid *fid, int mode);
 int p9_client_close(struct p9_fid *fid);
-struct p9_fid *p9_client_walk(struct p9_fid *oldfid, char *wname,
-    size_t wnamelen, int clone, int *error);
+struct p9_fid *p9_client_walk(struct p9_fid *oldfid, uint16_t nwnames,
+    char **wnames, int clone, int *error);
 struct p9_fid *p9_fid_create(struct p9_client *clnt);
 void p9_fid_destroy(struct p9_fid *fid);
 uint16_t p9_tag_create(struct p9_client *clnt);
@@ -133,8 +141,6 @@ int p9_client_file_create(struct p9_fid *fid, char *name, uint32_t perm, int mod
 int p9_client_remove(struct p9_fid *fid);
 int p9_dirent_read(struct p9_client *clnt, char *buf, int start, int len,
     struct p9_dirent *dirent);
-int p9_client_stat(struct p9_fid *fid, struct p9_wstat **stat);
-int p9_client_wstat(struct p9_fid *fid, struct p9_wstat *wst);
 int p9_client_statfs(struct p9_fid *fid, struct p9_statfs *stat);
 int p9_client_statread(struct p9_client *clnt, char *data, size_t len, struct p9_wstat *st);
 int p9_is_proto_dotu(struct p9_client *clnt);
@@ -143,19 +149,23 @@ void p9_client_cb(struct p9_client *c, struct p9_req_t *req);
 int p9stat_read(struct p9_client *clnt, char *data, size_t len, struct p9_wstat *st);
 void p9_client_disconnect(struct p9_client *clnt);
 void p9_client_begin_disconnect(struct p9_client *clnt);
+int p9_create_symlink(struct p9_fid *fid, char *name, char *symtgt, gid_t gid);
+int p9_create_hardlink(struct p9_fid *dfid, struct p9_fid *oldfid, char *name);
+int p9_readlink(struct p9_fid *fid, char **target);
+int p9_client_renameat(struct p9_fid *oldfid, char *oldname, struct p9_fid *newfid, char *newname);
+int p9_client_getattr(struct p9_fid *fid, struct p9_stat_dotl *stat_dotl,
+    uint64_t request_mask);
+int p9_client_setattr(struct p9_fid *fid, struct p9_iattr_dotl *p9attr);
 
 extern int p9_debug_level; /* All debugs on now */
 
-#define P9_DEBUG_TRANS			0x0001
-#define P9_DEBUG_SUBR			0x0002
-#define P9_DEBUG_VFS			0x0004
-#define P9_DEBUG_PROTO			0x0008
-#define P9_DEBUG_VOPS			0x0010
-#define P9_DEBUG_ERROR			0x0020
-#define P9_DEBUG_VNODE			0x0040
-#define P9_DEBUG_DIR			0x0080
-#define P9_DEBUG_NAMECACHE		0x0100
-#define P9_DEBUG_NODE			0x0200
+/* 9P debug flags */
+#define P9_DEBUG_TRANS			0x0001	/* Trace transport */
+#define P9_DEBUG_SUBR			0x0002	/* Trace driver submissions */
+#define P9_DEBUG_VFS			0x0004	/* VFS API tracing */
+#define P9_DEBUG_PROTO			0x0008	/* 9P protocol tracing */
+#define P9_DEBUG_VOPS			0x0010	/* VOPs tracing */
+#define P9_DEBUG_ERROR			0x0020	/* verbose error messages */
 
 #define p9_debug(category, fmt, ...) do {			\
 	if ((p9_debug_level & P9_DEBUG_##category) != 0)	\

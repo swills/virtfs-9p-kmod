@@ -24,9 +24,10 @@
  *
  */
 /*-
- * Plan9 filesystem (9P2000.u) subroutines.  This file is intended primarily
- * for Plan9-specific details.
- * This file consists of all the Non VFS Subroutines.
+ * 9P filesystem subroutines. This file consists of all the Non VFS subroutines.
+ * It contains all of the functions related to the driver submission which form
+ * the upper layer i.e, VirtFS driver. This will interact with the client to make
+ * sure we have correct API calls in the header.
  */
 
 #include <sys/cdefs.h>
@@ -58,26 +59,30 @@ virtfs_proto_dotl(struct virtfs_session *vses)
 	return (vses->flags & VIRTFS_PROTO_2000L);
 }
 
+/* Initialize a VirtFS session */
 struct p9_fid *
 virtfs_init_session(struct mount *mp, int *error)
 {
-	struct p9_fid *fid;
 	struct virtfs_session *vses;
 	struct virtfs_mount *virtmp;
+	struct p9_fid *fid;
+	char *access;
 
-	virtmp = mp->mnt_data;
+	virtmp = VFSTOP9(mp);
 	vses = &virtmp->virtfs_session;
-	vses->uid = 0;
+	vses->uid = P9_NONUNAME;
+	vses->uname = P9_DEFUNAME;
+	vses->aname = P9_DEFANAME;
 
 	/*
-	* Create the client structure. Call into the driver to create
-	* driver structures for the actual IO transfer.
-	*/
-	vses->clnt = p9_client_create(mp, error);
+	 * Create the client structure. Call into the driver to create
+	 * driver structures for the actual IO transfer.
+	 */
+	vses->clnt = p9_client_create(mp, error, virtmp->mount_tag);
 
 	if (vses->clnt == NULL) {
 		p9_debug(ERROR, "problem initializing 9p client\n");
-		goto fail;
+		return NULL;
 	}
 	/*
 	 * Find the client version and cache the copy. We will use this copy
@@ -88,31 +93,48 @@ virtfs_init_session(struct mount *mp, int *error)
 	else if (p9_is_proto_dotu(vses->clnt))
 		vses->flags |= VIRTFS_PROTO_2000U;
 
-	/* Attach with the backend host*/
-	fid = p9_client_attach(vses->clnt, error);
+	/* Set the access mode */
+	access = vfs_getopts(mp->mnt_optnew, "access", error);
+	if (access == NULL)
+		vses->flags |= P9_ACCESS_USER;
+	else if (!strcmp(access, "any"))
+		vses->flags |= P9_ACCESS_ANY;
+	else if (!strcmp(access, "single"))
+		vses->flags |= P9_ACCESS_SINGLE;
+	else if (!strcmp(access, "user"))
+		vses->flags |= P9_ACCESS_USER;
+	else {
+		p9_debug(ERROR, "Unknown access mode\n");
+		*error = EINVAL;
+		goto out;
+	}
 
-	if (fid == NULL) {
+	*error = 0;
+	/* Attach with the backend host*/
+	fid = p9_client_attach(vses->clnt, NULL, vses->uname, P9_NONUNAME,
+	    vses->aname, error);
+	vses->mnt_fid = fid;
+
+	if (*error != 0) {
 		p9_debug(ERROR, "cannot attach\n");
-		goto fail;
+		goto out;
 	}
 	p9_debug(SUBR, "Attach successful fid :%p\n", fid);
-
 	fid->uid = vses->uid;
 
-	/* init the node list for the session */
+	/* initialize the node list for the session */
 	STAILQ_INIT(&vses->virt_node_list);
 	VIRTFS_LOCK_INIT(vses);
 
 	p9_debug(SUBR, "INIT session successful\n");
 
 	return fid;
-fail:
-	if (vses->clnt)
-		p9_client_destroy(vses->clnt);
-
+out:
+	p9_client_destroy(vses->clnt);
 	return NULL;
 }
 
+/* Begin to terminate a session */
 void
 virtfs_prepare_to_close(struct mount *mp)
 {
@@ -126,6 +148,7 @@ virtfs_prepare_to_close(struct mount *mp)
 	p9_client_begin_disconnect(vses->clnt);
 }
 
+/* Shutdown a session */
 void
 virtfs_complete_close(struct mount *mp)
 {
@@ -146,21 +169,18 @@ virtfs_close_session(struct mount *mp)
 {
 	struct virtfs_session *vses;
 	struct virtfs_mount *vmp;
-	struct virtfs_node *p;
+	struct virtfs_node *p, *tmp;
 
 	vmp = VFSTOP9(mp);
 	vses = &vmp->virtfs_session;
 
 	/*
-	 * Cleanup the leftover virtfs_nodes in this session. This could be all
-	 * removed, unlinked virtfs_nodes on the host.
+	 * Cleanup the leftover VirtFS nodes in this session. This could be all
+	 * removed, unlinked VirtFS nodes on the host.
 	 */
 	VIRTFS_LOCK(vses);
-	STAILQ_FOREACH(p, &vses->virt_node_list, virtfs_node_next) {
-		(void)p9_client_clunk(p->vfid);
-		/* If we still have some open fids around, destroy them as well.*/
-		if (p->vofid)
-			(void)p9_client_clunk(p->vofid);
+	STAILQ_FOREACH_SAFE(p, &vses->virt_node_list, virtfs_node_next, tmp) {
+
 		virtfs_cleanup(p);
 	}
 	VIRTFS_UNLOCK(vses);
@@ -169,4 +189,215 @@ virtfs_close_session(struct mount *mp)
 	p9_client_destroy(vses->clnt);
 	VIRTFS_LOCK_DESTROY(vses);
 	p9_debug(SUBR, " Clean close session .\n");
+}
+
+/*
+ * Remove all the fids of a particular type from a VirtFS node
+ * as well as destroy/clunk them.
+ */
+void
+virtfs_fid_remove_all(struct virtfs_node *np)
+{
+	struct p9_fid *fid, *tfid;
+
+	STAILQ_FOREACH_SAFE(fid, &np->vfid_list, fid_next, tfid) {
+		STAILQ_REMOVE(&np->vfid_list, fid, p9_fid, fid_next);
+		p9_client_clunk(fid);
+	}
+
+	STAILQ_FOREACH_SAFE(fid, &np->vofid_list, fid_next, tfid) {
+		STAILQ_REMOVE(&np->vofid_list, fid, p9_fid, fid_next);
+		p9_client_clunk(fid);
+	}
+}
+
+
+/* Remove a fid from its corresponding fid list */
+void
+virtfs_fid_remove(struct virtfs_node *np, struct p9_fid *fid, int fid_type)
+{
+
+	switch (fid_type) {
+	case VFID:
+		VIRTFS_VFID_LOCK(np);
+		STAILQ_REMOVE(&np->vfid_list, fid, p9_fid, fid_next);
+		VIRTFS_VFID_UNLOCK(np);
+		break;
+	case VOFID:
+		VIRTFS_VOFID_LOCK(np);
+		STAILQ_REMOVE(&np->vofid_list, fid, p9_fid, fid_next);
+		VIRTFS_VOFID_UNLOCK(np);
+		break;
+	}
+}
+
+/* Add a fid to the corresponding fid list */
+void
+virtfs_fid_add(struct virtfs_node *np, struct p9_fid *fid, int fid_type)
+{
+
+	switch (fid_type) {
+	case VFID:
+		VIRTFS_VFID_LOCK(np);
+		STAILQ_INSERT_TAIL(&np->vfid_list, fid, fid_next);
+		VIRTFS_VFID_UNLOCK(np);
+		break;
+	case VOFID:
+		VIRTFS_VOFID_LOCK(np);
+		STAILQ_INSERT_TAIL(&np->vofid_list, fid, fid_next);
+		VIRTFS_VOFID_UNLOCK(np);
+		break;
+	}
+}
+
+/* Build the path from root to current directory */
+static int
+virtfs_get_full_path(struct virtfs_node *np, char ***names)
+{
+	int i, n;
+	struct virtfs_node *node;
+	char **wnames;
+
+	n = 0;
+	for (node = np ; (node != NULL) && !IS_ROOT(node) ; node = node->parent)
+		n++;
+
+	if (node == NULL)
+		return 0;
+
+	wnames = malloc(n * sizeof(char *), M_TEMP, M_ZERO|M_WAITOK);
+
+	for (i = n-1, node = np; i >= 0 ; i--, node = node->parent)
+		wnames[i] = node->inode.i_name;
+
+	*names = wnames;
+	return n;
+}
+
+/*
+ * Retrieve fid structure corresponding to a particular
+ * uid and fid type for a VirtFS node
+ */
+struct p9_fid *
+virtfs_get_fid_from_uid(struct virtfs_node *np, uid_t uid, int fid_type)
+{
+	struct p9_fid *fid;
+
+	switch (fid_type) {
+	case VFID:
+		VIRTFS_VFID_LOCK(np);
+		STAILQ_FOREACH(fid, &np->vfid_list, fid_next) {
+			if (fid->uid == uid) {
+				VIRTFS_VFID_UNLOCK(np);
+				return fid;
+			}
+		}
+		VIRTFS_VFID_UNLOCK(np);
+		break;
+	case VOFID:
+		VIRTFS_VOFID_LOCK(np);
+		STAILQ_FOREACH(fid, &np->vofid_list, fid_next) {
+			if (fid->uid == uid) {
+				VIRTFS_VOFID_UNLOCK(np);
+				return fid;
+			}
+		}
+		VIRTFS_VOFID_UNLOCK(np);
+		break;
+	}
+
+	return NULL;
+}
+
+/*
+ * Function returns the fid sturcture for a file corresponding to current user id.
+ * First it searches in the fid list of the corresponding VirtFS node.
+ * New fid will be created if not already present and added in the corresponding
+ * fid list in the VirtFS node.
+ * If the user is not already attached then this will attach the user first
+ * and then create a new fid for this particular file by doing dir walk.
+ */
+struct p9_fid *
+virtfs_get_fid(struct p9_client *clnt, struct virtfs_node *np, int fid_type,
+    int *error)
+{
+	uid_t uid;
+	struct thread *td;
+	struct p9_fid *fid, *oldfid;
+	struct virtfs_node *root;
+	struct virtfs_session *vses;
+	int i, l, clone;
+	char **wnames = NULL;
+	uint16_t nwnames;
+
+	td = curthread;
+	oldfid = NULL;
+	vses = np->virtfs_ses;
+
+	if (vses->flags & P9_ACCESS_ANY)
+		uid = vses->uid;
+	else
+		uid = td->td_ucred->cr_uid;
+
+	/*
+	 * Search for the fid in corresponding fid list.
+	 * We should return NULL for VOFID if it is not present in the list.
+	 * Because VOFID should have been created during the file open.
+	 * If VFID is not present in the list then we should create one.
+	 */
+	fid = virtfs_get_fid_from_uid(np, uid, fid_type);
+	if (fid != NULL || fid_type == VOFID)
+		return fid;
+
+	/* Check root if the user is attached */
+	root = &np->virtfs_ses->rnp;
+	fid = virtfs_get_fid_from_uid(root, uid, fid_type);
+	if(fid == NULL) {
+		/* Attach the user */
+		fid = p9_client_attach(clnt, NULL, NULL, uid,
+		    vses->aname, error);
+		if (*error != 0)
+			return NULL;
+		virtfs_fid_add(root, fid, fid_type);
+	}
+
+	/* If we are looking for root then return it */
+	if (IS_ROOT(np))
+		return fid;
+
+	/* If file is deleted, nothing to do */
+	if ((np->flags & VIRTFS_NODE_DELETED) != 0) {
+		*error = ENOENT;
+		return NULL;
+	}
+
+	/* Get full path from root to virtfs node */
+	nwnames = virtfs_get_full_path(np, &wnames);
+
+	/*
+	 * Could not get full path.
+	 * If virtfs node is not deleted, parent should exist.
+	 */
+	KASSERT(nwnames != 0, ("%s: Directory of %s doesn't exist", __func__, np->inode.i_name));
+
+	clone = 1;
+	i = 0;
+	while (i < nwnames) {
+		l = MIN(nwnames - i, P9_MAXWELEM);
+
+		fid = p9_client_walk(fid, l, wnames, clone, error);
+		if (*error != 0) {
+			if (oldfid)
+				p9_client_clunk(oldfid);
+			fid = NULL;
+			goto bail_out;
+		}
+		oldfid = fid;
+		clone = 0;
+		i += l ;
+	}
+	virtfs_fid_add(np, fid, fid_type);
+bail_out:
+	free(wnames, M_TEMP);
+	return fid;
 }

@@ -24,35 +24,16 @@
  *
  */
 
-/* Transport definitions */
-#ifndef NET_9P_TRANSPORT_H
-#define NET_9P_TRANSPORT_H
+#ifndef __VIRTIO_9P_CONFIG__
+#define __VIRTIO_9P_CONFIG__
 
-/* Tranport module interface */
-struct p9_trans_module {
-	char *name;			/* name of transport */
-	int def;			/* this transport should be default */
-	/* member function to create a new conection on this transport*/
-	int (*create)(struct p9_client *, const char *mount_tag);
-	/* member function to terminate a connection on this transport */
-	void (*close) (struct p9_client *);
-	/* member function to issue a request to the transport*/
-	int (*request) (struct p9_client *, struct p9_req_t *req);
-	/* member function to cancel a request if it has been sent */
-	int (*cancel) (struct p9_client *, struct p9_req_t *req);
-	/*
-	 * member function to notify that a cancelled request will not
-	 * receive a reply
-	 */
-	int (*cancelled)(struct p9_client *, struct p9_req_t *req);
-};
+/* Mount point feature specified in config variable */
+#define VIRTIO_9PNET_F_MOUNT_TAG 1
 
-void p9_register_trans(struct p9_trans_module *m);
-void p9_unregister_trans(struct p9_trans_module *m);
-struct p9_trans_module *p9_get_trans_by_name(char *s);
-struct p9_trans_module *p9_get_default_trans(void);
-void p9_put_trans(struct p9_client *clnt);
-void p9_init_zones(void);
-void p9_destroy_zones(void);
-
-#endif /* NET_9P_TRANSPORT_H */
+struct virtio_9pnet_config {
+	/* Mount tag length */
+	uint16_t mount_tag_len;
+	/* non NULL terminated tag name */
+	uint8_t mount_tag[0];
+} __attribute__((packed));
+#endif /* __VIRTIO_9P_CONFIG__ */

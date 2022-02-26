@@ -24,13 +24,15 @@
  * SUCH DAMAGE.
  */
 
+/* 9P protocol definitions */
+
 #ifndef __VIRTIO_FS_PROTOCOL_H__
 #define __VIRTIO_FS_PROTOCOL_H__
 
 int p9_buf_vwritef(struct p9_buffer *buf, int proto_version, const char *fmt,
     va_list ap);
 int p9_buf_readf(struct p9_buffer *buf, int proto_version, const char *fmt, ...);
-int p9_buf_prepare(struct p9_buffer *buf, int8_t type, struct p9_client *client);
+int p9_buf_prepare(struct p9_buffer *buf, int8_t type);
 int p9_buf_finalize(struct p9_client *clnt, struct p9_buffer *buf);
 void p9_buf_reset(struct p9_buffer *buf);
 

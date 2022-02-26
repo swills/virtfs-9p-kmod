@@ -34,15 +34,16 @@
 
 /* QID: Unique identification for the file being accessed */
 struct virtfs_qid {
-	uint8_t qid_mode;
-	uint32_t qid_version;
-	uint64_t qid_path;
+	uint8_t qid_mode;	/* file mode specifiying file type */
+	uint32_t qid_version;	/* version of the file */
+	uint64_t qid_path;	/* unique integer among all files in hierarchy */
 };
 
-#define	OREAD	0
-#define	OWRITE	1
-#define	ORDWR	2
-#define	OEXEC	3
-#define	OTRUNC	0x10
+/* File permissions */
+#define	VIRTFS_OREAD	0
+#define	VIRTFS_OWRITE	1
+#define	VIRTFS_ORDWR	2
+#define	VIRTFS_OEXEC	3
+#define	VIRTFS_OTRUNC	0x10
 
 #endif /* __VIRTFS_PROTO_H__ */
