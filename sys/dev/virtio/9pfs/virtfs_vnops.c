@@ -259,7 +259,11 @@ virtfs_lookup(struct vop_lookup_args *ap)
 	 * If the client_walk fails, it means the file looking for doesnt exist.
 	 * Create the file is the flags are set or just return the error
 	 */
-	newfid = p9_client_walk(dvfid, 1, &cnp->cn_nameptr, 1, &error);
+	if (cnp->cn_nameptr[0] == '.' && strlen(cnp->cn_nameptr) == 1) {
+		newfid = p9_client_walk(dvfid, 0, NULL, 1, &error);
+	} else {
+		newfid = p9_client_walk(dvfid, 1, &cnp->cn_nameptr, 1, &error);
+	}
 
 	cnp->cn_nameptr[cnp->cn_namelen] = tmpchr;
 
