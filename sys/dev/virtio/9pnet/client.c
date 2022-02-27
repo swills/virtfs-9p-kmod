@@ -64,7 +64,7 @@ static uma_zone_t virtfs_fid_zone;
 static uma_zone_t virtfs_req_zone;
 static uma_zone_t virtfs_buf_zone;
 int p9_debug_level = 0;
-SYSCTL_INT(_vfs, OID_AUTO, p9_debug_level, CTLFLAG_RWTUN,
+SYSCTL_INT(_vfs, OID_AUTO, p9_debug_level, CTLFLAG_RW,
     &p9_debug_level, 0, "Debug prints enabling switch for VirtFS");
 
 static struct p9_req_t *p9_get_request(struct p9_client *c, int *error);
