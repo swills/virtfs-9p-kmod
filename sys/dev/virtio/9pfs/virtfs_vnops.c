@@ -627,8 +627,20 @@ virtfs_uflags_mode(int uflags, int extended)
 	/* Convert first to O flags.*/
 	uflags = OFLAGS(uflags);
 
-	/* Always open file with RDWR permission */
-	ret = P9PROTO_ORDWR;
+	switch (uflags & 3) {
+
+	case O_RDONLY:
+	    ret = P9PROTO_OREAD;
+	    break;
+
+	case O_WRONLY:
+	    ret = P9PROTO_OWRITE;
+	    break;
+
+	case O_RDWR:
+	    ret = P9PROTO_ORDWR;
+	    break;
+	}
 
 	if (extended) {
 		if (uflags & O_EXCL)
