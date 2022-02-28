@@ -8,4 +8,9 @@ In the bhyve VM, load the module and then:
 
 `mount -t virtfs -o trans=virtio 9p /some/vm/path`
 
-See also: [9p review for bhyve](https://reviews.freebsd.org/D10335)
+See also:
+
+* [9p review for bhyve](https://reviews.freebsd.org/D10335)
+* [lib9p](https://github.com/conclusiveeng/lib9p)
+* [9P](https://en.wikipedia.org/wiki/9P_(protocol)
+* [9P protocol](http://9p.io/sys/man/5/INDEX.html)
