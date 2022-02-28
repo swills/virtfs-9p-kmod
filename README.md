@@ -12,5 +12,5 @@ See also:
 
 * [9p review for bhyve](https://reviews.freebsd.org/D10335)
 * [lib9p](https://github.com/conclusiveeng/lib9p)
-* [9P](https://en.wikipedia.org/wiki/9P_(protocol)
+* [9P](https://en.wikipedia.org/wiki/9P_(protocol))
 * [9P protocol](http://9p.io/sys/man/5/INDEX.html)
