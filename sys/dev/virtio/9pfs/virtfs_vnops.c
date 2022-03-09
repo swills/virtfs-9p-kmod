@@ -2148,3 +2148,6 @@ struct vop_vector virtfs_vnops = {
 	.vop_link =		virtfs_link,
 	.vop_readlink =		virtfs_readlink,
 };
+#if __FreeBSD_version >= 1300069
+VFS_VOP_VECTOR_REGISTER(virtfs_vnops);
+#endif
