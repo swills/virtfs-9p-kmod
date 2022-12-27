@@ -1611,7 +1611,7 @@ virtfs_symlink(struct vop_symlink_args *ap)
 	struct vnode **vpp;
 	struct vattr *vap;
 	struct componentname *cnp;
-	char *symtgt;
+	const char *symtgt;
 	struct virtfs_node *dnp;
 	struct virtfs_session *vses;
 	struct mount *mp;
