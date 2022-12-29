@@ -247,12 +247,13 @@ p9_client_check_return(struct p9_client *c, struct p9_req_t *req)
 	 * Note this is still not completely an error, as lookups for files
 	 * not present can hit this and return. Hence it is made a debug print.
 	 */
-	if (error != 0)
+	if (error != 0) {
 	        if (req->rc->id == P9PROTO_RERROR) {
 		        p9_debug(TRANS, "<<< RERROR (%d) %s\n", error, ename);
 	        } else if (req->rc->id == P9PROTO_RLERROR) {
 		        p9_debug(TRANS, "<<< RLERROR (%d)\n", error);
 		}
+	}
 
 	if (req->rc->id == P9PROTO_RERROR) {
 	        free(ename, M_TEMP);
@@ -1134,7 +1135,7 @@ p9_client_renameat(struct p9_fid *oldfid, char *oldname, struct p9_fid *newfid,
 
 /* Request to create symbolic link */
 int
-p9_create_symlink(struct p9_fid *fid, char *name, char *symtgt, gid_t gid)
+p9_create_symlink(struct p9_fid *fid, char *name, const char *symtgt, gid_t gid)
 {
 	int error;
 	struct p9_req_t *req;
