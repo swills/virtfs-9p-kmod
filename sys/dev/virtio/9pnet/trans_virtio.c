@@ -240,7 +240,11 @@ vt9p_alloc_virtqueue(struct vt9p_softc *sc)
 	    vt9p_intr_complete, sc, &sc->vt9p_vq,
 	    "%s request", device_get_nameunit(dev));
 
+#if __FreeBSD_version >= 1500001
+	return (virtio_alloc_virtqueues(dev, 1, &vq_info));
+#else
 	return (virtio_alloc_virtqueues(dev, 0, 1, &vq_info));
+#endif
 }
 
 /* Probe for existence of 9P virtio channels */
